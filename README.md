@@ -47,7 +47,7 @@ Edit the `SETUP` section at the top of the file:
 | `TIMEZONE` | Timezone used for dates and weekdays (runners use UTC). Default: `Europe/Brussels` |
 | `HOLIDAYS` | List of `YYYY-MM-DD` dates on which nothing runs. **Keep it up to date.** |
 | `CAMPUS_DAYS` | Weekdays spent on campus (`0` = Monday … `6` = Sunday). All other days are "at home" |
-| `URL_ATTENDANCE` | URL of your Moodle attendance page. ***id* param differs by course** |
+| `URL_ATTENDANCE` | URL of your Moodle attendance page. ***id* param differs by course.**|
 
 ### 3. Configure the schedule
 
@@ -55,9 +55,9 @@ The schedule lives in `.github/workflows/attendance.yml`. Cron times are in **UT
 
 | Cron | Action | Brussels time (winter, UTC+1) |
 |---|---|---|
-| `52 7 * * 1-5` | check-in | ~07:52 |
+| `7 8 * * 1-5` | check-in | ~09:07 |
 | `33 11 * * 1-5` | check-out | ~12:33 |
-| `22 12 * * 1-5` | check-in | ~13:22 |
+| `37 12 * * 1-5` | check-in | ~13:37 |
 | `3 16 * * 1-5` | check-out | ~17:03 |
 
 Things to know:
@@ -90,9 +90,12 @@ Requires Chrome installed locally.
 
 ## Behavior
 
-- Skips weekends and dates listed in `HOLIDAYS`.
+- Skips weekends and dates listed in `HOLIDAYS`. It also does nothing on days that have no session in the attendance table.
 - Picks the location from the weekday (`CAMPUS_DAYS`).
+- Reads today's rows of the attendance table (date and time range, status cell) and only looks for the `Check in` / `Check out` link in those rows.
 - If the action is already done (for example, checking in when already checked in), it logs "nothing to do" and exits successfully.
+- A **check-out** with nothing to check out of is not an error. A **check-in** fails (on purpose) if a session has already started, still shows `?`, and no `Check in` link is available, so a missed check-in shows up as a failed run.
+- After a click it reloads the page and verifies that the status really changed.
 - Verifies that the login form is filled before submitting. A rejected login fails the run with Moodle's error message and is **not** retried, to avoid locking the account.
 
 ## Troubleshooting
@@ -101,7 +104,8 @@ Requires Chrome installed locally.
 |---|---|
 | `Unknown schedule '…'` | A cron line was changed without updating the `case` block in the workflow |
 | `Login was not accepted: …` | Wrong credentials in the secrets, or Moodle is blocking the login. Check the message in the log |
-| `Neither link found …` | The page layout or link texts changed. Check the debug screenshot and the printed link list, then adjust the selectors in `main.py` |
+| `Attendance table not found …` / `Could not read any session …` | The page layout, link texts or date format changed. Check the debug screenshot, then adjust the selectors/parsing in `main.py` |
+| `Could not checkin: the session starting at … is still '?'` | No `Check in` link was available at run time (window not open yet, or missed). Check the run's schedule and the session's window |
 | No runs happening | Workflow disabled, not on the default branch, or (public repos) disabled after 60 days without repository activity |
 
 On failure, download the **debug-screenshot** artifact from the bottom of the workflow run page.
