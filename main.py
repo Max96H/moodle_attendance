@@ -42,8 +42,8 @@ ACTIONS = {
 def get_credentials():
     """Reads the login and password from environment variables
     (set from GitHub Secrets in the workflow). Never stored in the repo."""
-    login = os.environ.get("MOODLE_LOGIN")
-    password = os.environ.get("MOODLE_PASSWORD")
+    login = (os.environ.get("MOODLE_LOGIN") or "").strip()
+    password = (os.environ.get("MOODLE_PASSWORD") or "").strip("\r\n")
     if not login or not password:
         print("ERROR: MOODLE_LOGIN and/or MOODLE_PASSWORD are not set.")
         sys.exit(1)
@@ -66,17 +66,36 @@ def login_handling(driver):
     login, password = get_credentials()
     wait = WebDriverWait(driver, TIMEOUT)
 
-    login_input = wait.until(EC.presence_of_element_located((By.ID, "username")))
-    password_input = driver.find_element(By.ID, "password")
-
-    login_input.clear()
-    login_input.send_keys(login)
-    password_input.clear()
-    password_input.send_keys(password)
+    # Fill the form and check both fields really hold what we typed before
+    # submitting (page scripts can wipe a field, and an empty submit = failed login).
+    for attempt in range(1, 4):
+        login_input = wait.until(EC.element_to_be_clickable((By.ID, "username")))
+        password_input = wait.until(EC.element_to_be_clickable((By.ID, "password")))
+ 
+        login_input.clear()
+        login_input.send_keys(login)
+        password_input.clear()
+        password_input.send_keys(password)
+ 
+        if (login_input.get_attribute("value") == login
+                and password_input.get_attribute("value") == password):
+            break
+        print(f"Login form not filled correctly (attempt {attempt}), reloading...")
+        driver.refresh()
+    else:
+        raise RuntimeError("Could not fill in the login form.")
+ 
     password_input.send_keys(Keys.RETURN)
+ 
+    # A rejected login keeps us on the login page. We do NOT retry the submit:
+    # repeated bad logins can lock the account.
+    try:
+        wait.until(lambda d: 'login' not in d.current_url)
+    except TimeoutException:
+        error = driver.find_elements(By.ID, "loginerrormessage")
+        message = error[0].text if error else "no error message found on the page"
+        raise RuntimeError(f"Login was not accepted: {message}")
 
-    # If the login fails, we stay on the login page and this times out -> job fails
-    wait.until(lambda d: 'login' not in d.current_url)
 
 
 def fill_and_save_form(driver, location, form_required):
