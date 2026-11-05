@@ -1,0 +1,67 @@
+name: Moodle attendance
+
+on:
+  schedule:
+    # Cron is in UTC, Monday to Friday. Times below are Brussels WINTER time (UTC+1);
+    # in summer (UTC+2) subtract one more hour. Avoid exact :00 / :30 minutes,
+    # GitHub is busiest then and runs get delayed.
+    # IMPORTANT: if you change a cron line, change it in the "case" below too.
+    - cron: '52 7 * * 1-5'     # check-in  ~08:52
+    - cron: '33 11 * * 1-5'   # check-out ~12:33
+    - cron: '22 12 * * 1-5'   # check-in  ~13:22
+    - cron: '3 16 * * 1-5'    # check-out ~17:03
+  workflow_dispatch:          # manual run, pick the action
+    inputs:
+      action:
+        description: What to do
+        type: choice
+        required: true
+        options:
+          - checkin
+          - checkout
+
+concurrency:
+  group: moodle-attendance
+  cancel-in-progress: false
+
+jobs:
+  attendance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Run attendance action
+        env:
+          MOODLE_LOGIN: ${{ secrets.MOODLE_LOGIN }}
+          MOODLE_PASSWORD: ${{ secrets.MOODLE_PASSWORD }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_SCHEDULE: ${{ github.event.schedule }}
+          INPUT_ACTION: ${{ inputs.action }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            ACTION="$INPUT_ACTION"
+          else
+            case "$EVENT_SCHEDULE" in
+              '52 7 * * 1-5'|'22 12 * * 1-5')  ACTION=checkin ;;
+              '33 11 * * 1-5'|'3 16 * * 1-5') ACTION=checkout ;;
+              *) echo "Unknown schedule '$EVENT_SCHEDULE': update the case statement"; exit 1 ;;
+            esac
+          fi
+          python main.py "$ACTION"
+
+      - name: Upload screenshot on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-screenshot
+          path: debug.png
+          if-no-files-found: ignore
+          retention-days: 3
