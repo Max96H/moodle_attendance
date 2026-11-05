@@ -1,16 +1,18 @@
 import argparse
 import os
 import sys
+import time
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from selenium import webdriver
-from selenium.common.exceptions import TimeoutException
+from selenium.common.exceptions import StaleElementReferenceException, TimeoutException
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import Select, WebDriverWait
+
 
 # ::::::::::::::::::SETUP::::::::::::::::::::
 # GitHub runners use UTC, so always compute date/weekday in your own timezone.
@@ -20,7 +22,7 @@ TIMEZONE = ZoneInfo("Europe/Brussels")
 HOLIDAYS = [
     '2026-10-19', '2026-10-20', '2026-10-21', '2026-10-22', '2026-10-23', 
     '2026-07-13', '2026-07-14', '2026-07-15', '2026-07-16','2026-07-17', 
-    '2026-07-21', 
+    '2026-07-21', '2026-11-11'
 ]
 
 # Days you attend from campus (0 = Monday, 1 = Tuesday, ...). Other days = at home.
@@ -61,31 +63,48 @@ def build_driver():
     return webdriver.Chrome(options=options)
 
 
+def type_into(driver, element_id, text, tries=5):
+    """Clears and fills a field, re-locating it on every try so that a page
+    re-render (StaleElementReferenceException) doesn't break the run."""
+    for _ in range(tries):
+        try:
+            field = WebDriverWait(driver, TIMEOUT).until(
+                EC.element_to_be_clickable((By.ID, element_id))
+            )
+            field.clear()
+            field.send_keys(text)
+            return
+        except StaleElementReferenceException:
+            time.sleep(1)
+    raise RuntimeError(f"Could not fill in the '{element_id}' field.")
+ 
+ 
 def login_handling(driver):
     """Fills in the login form and waits until we're past the login page."""
     login, password = get_credentials()
     wait = WebDriverWait(driver, TIMEOUT)
-
-    # Fill the form and check both fields really hold what we typed before
-    # submitting (page scripts can wipe a field, and an empty submit = failed login).
+ 
+    # The login page can re-render itself while loading (the old element then
+    # goes "stale"), so elements are re-located for every action, the page is
+    # given time to settle, and both fields are verified before submitting.
     for attempt in range(1, 4):
-        login_input = wait.until(EC.element_to_be_clickable((By.ID, "username")))
-        password_input = wait.until(EC.element_to_be_clickable((By.ID, "password")))
- 
-        login_input.clear()
-        login_input.send_keys(login)
-        password_input.clear()
-        password_input.send_keys(password)
- 
-        if (login_input.get_attribute("value") == login
-                and password_input.get_attribute("value") == password):
-            break
+        try:
+            wait.until(lambda d: d.execute_script("return document.readyState") == "complete")
+            time.sleep(1)  # let page scripts finish
+            type_into(driver, "username", login)
+            type_into(driver, "password", password)
+            time.sleep(0.5)
+            if (driver.find_element(By.ID, "username").get_attribute("value") == login
+                    and driver.find_element(By.ID, "password").get_attribute("value") == password):
+                break
+        except StaleElementReferenceException:
+            pass
         print(f"Login form not filled correctly (attempt {attempt}), reloading...")
         driver.refresh()
     else:
         raise RuntimeError("Could not fill in the login form.")
  
-    password_input.send_keys(Keys.RETURN)
+    driver.find_element(By.ID, "password").send_keys(Keys.RETURN)
  
     # A rejected login keeps us on the login page. We do NOT retry the submit:
     # repeated bad logins can lock the account.
@@ -156,7 +175,6 @@ def run_action(driver, action, location):
     link = wait.until(EC.element_to_be_clickable((By.XPATH, wanted)))
     link.click()
     fill_and_save_form(driver, location, cfg["form_required"])
-
 
 
 def main():
