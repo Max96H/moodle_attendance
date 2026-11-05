@@ -115,13 +115,29 @@ def run_action(driver, action, location):
         if 'attendance' not in driver.current_url:
             driver.get(URL_ATTENDANCE)
 
-    link = wait.until(
-        EC.element_to_be_clickable(
-            (By.XPATH, f"//a[contains(text(), '{cfg['link_text']}')]")
-        )
-    )
+    other = ACTIONS["checkout" if action == "checkin" else "checkin"]
+    wanted = f"//a[contains(text(), '{cfg['link_text']}')]"
+    opposite = f"//a[contains(text(), '{other['link_text']}')]"
+ 
+    # Wait for either link, so "already done" can be told apart from "page broken"
+    try:
+        wait.until(EC.presence_of_element_located((By.XPATH, f"{wanted} | {opposite}")))
+    except TimeoutException:
+        links = [a.text.strip() for a in driver.find_elements(By.TAG_NAME, "a")
+                 if "check" in a.text.lower()]
+        print(f"Neither link found. URL: {driver.current_url} | "
+              f"title: {driver.title} | links containing 'check': {links}")
+        raise
+ 
+    if not driver.find_elements(By.XPATH, wanted):
+        print(f"No '{cfg['link_text']}' link, but '{other['link_text']}' is shown: "
+              f"the {action} looks already done, nothing to do.")
+        return
+ 
+    link = wait.until(EC.element_to_be_clickable((By.XPATH, wanted)))
     link.click()
     fill_and_save_form(driver, location, cfg["form_required"])
+
 
 
 def main():
