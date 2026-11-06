@@ -6,6 +6,8 @@ on:
     # in summer (UTC+2) subtract one more hour. Avoid exact :00 / :30 minutes,
     # GitHub is busiest then and runs get delayed.
     # IMPORTANT: if you change a cron line, change it in the "case" below too.
+    # Scheduled runs that start more than MAX_LATE_MIN minutes after their cron time
+    # are skipped (see the "Run attendance action" step). Manual runs are never skipped.
     - cron: '52 7 * * 1-5'     # check-in  ~08:52
     - cron: '33 11 * * 1-5'   # check-out ~12:33
     - cron: '22 12 * * 1-5'   # check-in  ~13:22
@@ -45,17 +47,29 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           EVENT_SCHEDULE: ${{ github.event.schedule }}
           INPUT_ACTION: ${{ inputs.action }}
+          MAX_LATE_MIN: 20   # scheduled runs starting later than this (in minutes) are skipped
         run: |
-          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            ACTION="$INPUT_ACTION"
-          else
-            case "$EVENT_SCHEDULE" in
-              '52 7 * * 1-5'|'22 12 * * 1-5')  ACTION=checkin ;;
-              '33 11 * * 1-5'|'3 16 * * 1-5') ACTION=checkout ;;
-              *) echo "Unknown schedule '$EVENT_SCHEDULE': update the case statement"; exit 1 ;;
-            esac
-          fi
-          python main.py "$ACTION"
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then   # manual run (or API call)?
+            ACTION="$INPUT_ACTION"                           # use the action picked in the dropdown
+          else                                               # otherwise the run came from the schedule
+            case "$EVENT_SCHEDULE" in                        # look at which cron expression fired
+              '52 7 * * 1-5'|'22 12 * * 1-5')  ACTION=checkin ;;    # the two check-in crons ( | = "or" )
+              '33 11 * * 1-5'|'3 16 * * 1-5')  ACTION=checkout ;;   # the two check-out crons
+              *) echo "Unknown schedule '$EVENT_SCHEDULE': update the case statement"; exit 1 ;;  # safety net
+            esac                                             # end of the case block
+
+            read -r CRON_MIN CRON_HOUR _ <<< "$EVENT_SCHEDULE"            # "52 7 * * 1-5" -> minute=52, hour=7 (UTC)
+            NOW_TOTAL=$(( 10#$(date -u +%H) * 60 + 10#$(date -u +%M) ))   # now, in minutes since 00:00 UTC (10# avoids octal errors on 08/09)
+            CRON_TOTAL=$(( 10#$CRON_HOUR * 60 + 10#$CRON_MIN ))          # intended start, in minutes since 00:00 UTC
+            LATE=$(( NOW_TOTAL - CRON_TOTAL ))                            # how many minutes late did this run start?
+            if [ "$LATE" -lt 0 ]; then LATE=$(( LATE + 1440 )); fi        # the run slipped past midnight UTC: add 24h
+            if [ "$LATE" -gt "$MAX_LATE_MIN" ]; then                      # too late to act safely?
+              echo "::warning::Skipped $ACTION: run started ${LATE} min after its cron time (max ${MAX_LATE_MIN})."   # yellow warning in the run summary
+              exit 0                                                      # stop here; the run is marked successful, nothing was done
+            fi                                                            # end of the lateness check
+            echo "Scheduled run is ${LATE} min after its cron time, going ahead."   # log how late it was
+          fi                                                 # end of the if block
+          python main.py "$ACTION"                           # run the script with checkin or checkout
 
       - name: Upload screenshot on failure
         if: failure()
