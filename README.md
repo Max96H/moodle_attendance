@@ -90,7 +90,8 @@ Requires Chrome installed locally.
 
 ## Behavior
 
-- Skips weekends and dates listed in `HOLIDAYS`. It also does nothing on days that have no session in the attendance table.
+- Skips weekends and dates listed in `HOLIDAYS`. It also does nothing on days that have no session in the attendance table.  
+- Skips if the schedule run is more than **20 minutes late**. Manual runs go through regardless of time.  
 - Picks the location from the weekday (`CAMPUS_DAYS`).
 - Reads today's rows of the attendance table (date and time range, status cell) and only looks for the `Check in` / `Check out` link in those rows.
 - If the action is already done (for example, checking in when already checked in), it logs "nothing to do" and exits successfully.
