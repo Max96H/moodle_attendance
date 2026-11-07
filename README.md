@@ -1,5 +1,7 @@
 # Moodle Attendance Automation (GitHub Actions)
 
+Within a DATA & AI course at BeCode, I was given the challenge of automating my attendance checks using GitHub Actions. This is the result:  
+
 Automatically checks in and out on a Moodle attendance page at fixed times, several days a week, using Selenium and GitHub Actions. It runs in the cloud, so no personal computer needs to be switched on.
 
 Two independent triggers start the workflow: **GitHub's own scheduler** and an external scheduler, **cron-job.org** (a second layer added because GitHub's scheduler proved unreliable, see [Known issue](#known-issue-github-scheduler-delays)).
