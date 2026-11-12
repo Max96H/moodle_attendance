@@ -119,7 +119,8 @@ Requires Chrome installed locally.
 
 - Skips weekends and dates listed in `HOLIDAYS`. It also does nothing on days that have no session in the attendance table.  
 - Skips if the **schedule** run is more than **20 minutes late**. Manual runs (including those triggered by cron-job.org) go through regardless of time.  
-- Picks the location from the weekday (`CAMPUS_DAYS`).
+- Picks the location from the weekday (`CAMPUS_DAYS`).  
+- Wait between 0 and 6 minutes, at random, before acting to better match human behavior.  
 - **Always inspects the attendance page status before acting.** It reads today's rows of the attendance table (date and time range, status cell) and only looks for the `Check in` / `Check out` link in those rows.
 - If the action is already done (for example, checking in when already checked in), it logs "nothing to do" and exits successfully. This is what makes duplicate runs from the two triggers harmless.
 - A **check-out** with nothing to check out of is not an error. A **check-in** fails (on purpose) if a session has already started, still shows `?`, and no `Check in` link is available, so a missed check-in shows up as a failed run.
