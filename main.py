@@ -1,5 +1,6 @@
 import argparse
 import os
+import random
 import re
 import sys
 import time
@@ -287,7 +288,10 @@ def main():
  
     location = "oncampus" if now.weekday() in CAMPUS_DAYS else "athome"
     print(f"{args.action} on {now:%Y-%m-%d %H:%M} ({TIMEZONE}), location: {location}")
- 
+
+    minutes_wait = random.randint(0, 6)
+    print(f"Time delay of : {minutes_wait} minute(s).")
+    time.sleep(minutes_wait * 60)
     driver = build_driver()
     try:
         run_action(driver, args.action, location, now)
